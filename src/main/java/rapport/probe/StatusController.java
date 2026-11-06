@@ -3,16 +3,20 @@ package rapport.probe;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 public class StatusController {
-    private final HealthProbe healthProbe;
+    private final ProbeProperties properties;
+    private final ProbeSnapshot snapshot;
 
-    public StatusController(HealthProbe healthProbe) {
-        this.healthProbe = healthProbe;
+    public StatusController(ProbeProperties properties, ProbeSnapshot snapshot) {
+        this.properties = properties;
+        this.snapshot = snapshot;
     }
 
     @GetMapping("/status")
-    public ProbeResult status() {
-        return healthProbe.interpret("api", 200, 0);
+    public List<ProbeResult> status() {
+        return snapshot.findAll(properties.targets());
     }
 }
