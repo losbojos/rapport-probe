@@ -8,11 +8,18 @@ public class ProbeScheduler implements ApplicationRunner {
     private final ProbeProperties properties;
     private final HttpTargetChecker checker;
     private final ProbeSnapshot snapshot;
+    private final TargetMetrics metrics;
 
-    public ProbeScheduler(ProbeProperties properties, HttpTargetChecker checker, ProbeSnapshot snapshot) {
+    public ProbeScheduler(
+            ProbeProperties properties,
+            HttpTargetChecker checker,
+            ProbeSnapshot snapshot,
+            TargetMetrics metrics
+    ) {
         this.properties = properties;
         this.checker = checker;
         this.snapshot = snapshot;
+        this.metrics = metrics;
     }
 
     @Override
@@ -23,7 +30,9 @@ public class ProbeScheduler implements ApplicationRunner {
     @Scheduled(fixedDelayString = "${probe.interval}", initialDelayString = "${probe.interval}")
     public void poll() {
         for (ProbeProperties.Target target : properties.targets()) {
-            snapshot.save(checker.check(target));
+            ProbeResult result = checker.check(target);
+            snapshot.save(result);
+            metrics.record(result);
         }
     }
 }

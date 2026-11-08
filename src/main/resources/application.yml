@@ -3,3 +3,12 @@ probe:
   targets:
     - name: api
       url: http://127.0.0.1:3000/api/health
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: always

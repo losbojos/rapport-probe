@@ -1,5 +1,6 @@
 package rapport.probe;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -41,11 +42,17 @@ public class ProbeApplication {
     }
 
     @Bean
+    TargetMetrics targetMetrics(MeterRegistry meterRegistry) {
+        return new TargetMetrics(meterRegistry);
+    }
+
+    @Bean
     ProbeScheduler probeScheduler(
             ProbeProperties properties,
             HttpTargetChecker checker,
-            ProbeSnapshot snapshot
+            ProbeSnapshot snapshot,
+            TargetMetrics metrics
     ) {
-        return new ProbeScheduler(properties, checker, snapshot);
+        return new ProbeScheduler(properties, checker, snapshot, metrics);
     }
 }
