@@ -1,0 +1,11 @@
+services:
+  probe:
+    build: .
+    image: rapport-probe:latest
+    ports:
+      - "8080:8080"
+    environment:
+      PROBE_TARGETS_0_NAME: api
+      PROBE_TARGETS_0_URL: http://host.docker.internal:3000/api/health
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
