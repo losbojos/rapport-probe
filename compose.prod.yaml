@@ -1,0 +1,58 @@
+# Prod monitoring stack for the Jitsi VPS.
+# Ports bind to 127.0.0.1 only — open via SSH tunnel, not the public internet.
+#
+#   ssh -L 8081:127.0.0.1:8081 -L 9090:127.0.0.1:9090 -L 3001:127.0.0.1:3001 user@vps
+#
+# Then on your PC: http://127.0.0.1:3001 (Grafana), :8081 (probe), :9090 (Prometheus).
+
+services:
+  probe:
+    build: .
+    image: rapport-probe:latest
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8081"
+      PROBE_INTERVAL: "15000"
+      PROBE_TARGETS_0_NAME: api
+      PROBE_TARGETS_0_URL: https://rapport-api.fly.dev/api/health
+      PROBE_TARGETS_1_NAME: jitsi
+      PROBE_TARGETS_1_URL: https://meet.rapport-game.online/
+    ports:
+      # 8080 on the VPS is taken by jitsi-jvb
+      - "127.0.0.1:8081:8081"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - probe
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-changeme}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://127.0.0.1:3001
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/dashboards:ro
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus-data:
+  grafana-data:

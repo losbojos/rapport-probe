@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: rapport-probe
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - probe:8081
