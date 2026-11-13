@@ -49,7 +49,11 @@ docker compose -f compose.dev.yaml up --build
 
 ## Prod на VPS (probe + Prometheus + Grafana)
 
-Стек рассчитан на VPS рядом с Jitsi. Порты слушаются **только на 127.0.0.1** — с интернета Grafana/Prometheus/probe не открыты. Доступ с ПК — SSH-туннель.
+Стек стоит на VPS рядом с Jitsi (`root@195.19.195.228`, каталог `/opt/rapport-probe`).
+
+Дашборд открыт всем: **https://status.rapport-game.online**. Логин не нужен, роль анонима — Viewer, домашняя страница — **Rapport probe**. Админка: https://status.rapport-game.online/login, пользователь `admin`, пароль из `.env` на VPS. Регистрация выключена.
+
+Probe (`127.0.0.1:8081`) и Prometheus (`127.0.0.1:9090`) с интернета закрыты. Grafana с хоста тоже слушает только `127.0.0.1:3001`; наружу её отдаёт nginx контейнера `jitsi-web`.
 
 Цели prod (в `compose.prod.yaml`):
 
@@ -62,7 +66,7 @@ docker compose -f compose.dev.yaml up --build
 
 ### Выкладка
 
-На VPS (пример каталога `/opt/rapport-probe`): скопируйте содержимое `dev/probe` (как минимум `Dockerfile`, `pom.xml`, `src`, `compose.prod.yaml`, `prometheus/`, `grafana/`, `env.prod.example`).
+На VPS скопируйте содержимое репозитория (как минимум `Dockerfile`, `pom.xml`, `src`, `compose.prod.yaml`, `prometheus/`, `grafana/`, `env.prod.example`).
 
 ```bash
 cd /opt/rapport-probe
@@ -72,27 +76,56 @@ docker compose -f compose.prod.yaml --env-file .env up -d --build
 docker compose -f compose.prod.yaml ps
 ```
 
-### SSH-туннель с ПК
+`GF_SECURITY_ADMIN_PASSWORD` действует только при первом создании пользователя `admin`. Сеть `jitsiweb` в `compose.prod.yaml` — внешняя сеть Jitsi `jitsi_meet.jitsi`. Без неё nginx в `jitsi-web` не видит контейнер `rapport-probe-grafana-1`.
 
-```powershell
-ssh -L 8081:127.0.0.1:8081 -L 9090:127.0.0.1:9090 -L 3001:127.0.0.1:3001 user@YOUR_VPS
+На VPS порт **8080** занят `jitsi-jvb`; probe слушает **8081** (`SERVER_PORT=8081`, проброс `127.0.0.1:8081:8081`).
 
-user@YOUR_VPS : root@195.19.195.228
+Логи на VPS: `docker compose -f compose.prod.yaml logs -f probe`.
+
+### Публичный адрес Grafana
+
+Порты **80** и **443** заняты контейнером `jitsi-web` (`0.0.0.0:80→8000`, `0.0.0.0:443→8443`). Отдельный nginx на хосте сюда не встанет. Поддомен — свой `server` внутри этого же nginx.
+
+| Что | Где |
+|-----|-----|
+| DNS | `A` `status.rapport-game.online` → `195.19.195.228` |
+| Конфиг Jitsi на хосте | `/root/.jitsi-meet-cfg/web` (в контейнере это `/config`) |
+| Сайт nginx | `/root/.jitsi-meet-cfg/web/nginx/site-confs/status.conf` |
+| Сертификат | `/root/.jitsi-meet-cfg/web/keys/status.crt` и `status.key` |
+| Каталог для certbot | `/root/.jitsi-meet-cfg/web/acme` |
+
+`status.conf` слушает **8000** (HTTP, выпуск и продление сертификата) и **8443** (HTTPS). HTTPS проксирует на `http://rapport-probe-grafana-1:3000`. Сертификат выпущен certbot'ом:
+
+```bash
+certbot certonly --webroot -w /root/.jitsi-meet-cfg/web/acme -d status.rapport-game.online
 ```
 
-На VPS порт **8080** занят `jitsi-jvb`; probe слушает **8081** и снаружи, и внутри контейнера (`SERVER_PORT=8081`, проброс `127.0.0.1:8081:8081`).
+Живой nginx читает копию конфига, которую контейнер собирает при старте в `/run/web/config`. Файл в `/config` сам по себе процесс не подхватывает. После правки `status.conf` перезапустите контейнер: `docker restart jitsi-web-1` (страница meet пропадёт на несколько секунд). Проверка до перезапуска:
+
+```bash
+docker exec -u root jitsi-web-1 nginx -t -c /run/web/config/nginx/nginx.conf
+```
+
+Команда `nginx -t` без `-c` смотрит чужой файл и на этой read-only файловой системе падает на `/var/log/nginx/error.log`, даже если конфиг Jitsi верный.
+
+Продление: certbot обновляет файлы в `/etc/letsencrypt` сам. Хук `/etc/letsencrypt/renewal-hooks/deploy/status-grafana.sh` копирует их в `keys/status.crt` и `keys/status.key` и посылает nginx `HUP`. Сертификат действует до **2027-02-11**.
+
+### SSH-туннель с ПК
+
+Туннель нужен для JSON probe и UI Prometheus. Дашборд смотрите по публичному адресу.
+
+```powershell
+ssh -L 8081:127.0.0.1:8081 -L 9090:127.0.0.1:9090 root@195.19.195.228
+```
 
 Пока туннель открыт:
 
 | На ПК | Сервис |
 |-------|--------|
-| http://127.0.0.1:3001 | Grafana (логин `admin`, пароль из `.env`) |
 | http://127.0.0.1:8081/status | JSON probe |
 | http://127.0.0.1:9090 | UI Prometheus |
 
-В Grafana: меню **Dashboards** → **Browse** → папка **Rapport** → **Rapport probe** (не домашний экран). Datasource Prometheus подключается сам.
-
-Логи на VPS: `docker compose -f compose.prod.yaml logs -f probe`.
+Скрипт `scripts/tunnel.ps1` по-прежнему пробрасывает и порт Grafana `3001`. Для просмотра дашборда он не нужен.
 
 ## Endpoints probe
 
@@ -102,7 +135,7 @@ user@YOUR_VPS : root@195.19.195.228
 | `GET /actuator/health` | Жив ли сам probe |
 | `GET /actuator/prometheus` | Метрики, в т.ч. `rapport_target_*` |
 
-Примеры (локально или через туннель):
+Примеры локально (порт **8080**). На VPS через туннель тот же путь на порту **8081**:
 
 ```powershell
 curl.exe http://127.0.0.1:8080/status

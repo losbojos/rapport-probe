@@ -1,9 +1,8 @@
 # Prod monitoring stack for the Jitsi VPS.
-# Ports bind to 127.0.0.1 only — open via SSH tunnel, not the public internet.
+# Grafana is public at https://status.rapport-game.online through the Jitsi web container.
+# Probe and Prometheus stay on 127.0.0.1. SSH tunnel for those two:
 #
-#   ssh -L 8081:127.0.0.1:8081 -L 9090:127.0.0.1:9090 -L 3001:127.0.0.1:3001 user@vps
-#
-# Then on your PC: http://127.0.0.1:3001 (Grafana), :8081 (probe), :9090 (Prometheus).
+#   ssh -L 8081:127.0.0.1:8081 -L 9090:127.0.0.1:9090 user@vps
 
 services:
   probe:
@@ -43,16 +42,30 @@ services:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-changeme}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: http://127.0.0.1:3001
+      GF_SERVER_ROOT_URL: https://status.rapport-game.online
+      GF_SERVER_DOMAIN: status.rapport-game.online
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_NAME: Main Org.
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /dashboards/probe.json
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/dashboards:ro
     ports:
       - "127.0.0.1:3001:3000"
+    networks:
+      - default
+      - jitsiweb
     depends_on:
       - prometheus
 
 volumes:
   prometheus-data:
   grafana-data:
+
+networks:
+  jitsiweb:
+    external: true
+    name: jitsi_meet.jitsi
